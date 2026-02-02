@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Publisher Website - AfriAds Integration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #667eea;
+            margin-bottom: 40px;
+        }
+        
+        header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .main-content {
+            padding-right: 20px;
+        }
+        
+        .article {
+            margin-bottom: 30px;
+        }
+        
+        .article h2 {
+            color: #333;
+            font-size: 1.8em;
+            margin-bottom: 15px;
+        }
+        
+        .article p {
+            color: #666;
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+        
+        .sidebar {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .ad-section {
+            margin: 40px 0;
+            padding: 20px;
+            background: #f0f4ff;
+            border-radius: 8px;
+            border: 2px dashed #667eea;
+        }
+        
+        .ad-label {
+            text-align: center;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 30px;
+            border-top: 2px solid #e0e0e0;
+            color: #999;
+            margin-top: 40px;
+        }
+
+        .info-box {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .info-box h3 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .code-box {
+            background: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌍 Kenya Tech News</h1>
+            <p>Your Source for Technology News in East Africa</p>
+        </header>
+
+        <div class="info-box">
+            <h3>🎯 AfriAds Integration Test Page</h3>
+            <p>
+                This page simulates a real publisher website with AfriAds integration. 
+                The ads below are loaded dynamically from your AfriAds platform.
+            </p>
+            <p style="margin-top: 10px;">
+                <strong>Note:</strong> Make sure you have:
+                <br>• Created an ad zone in the publisher dashboard
+                <br>• At least one active campaign with approved creatives
+                <br>• Noted your zone_id and website_id
+            </p>
+        </div>
+
+        <!-- TOP BANNER AD ZONE -->
+        <div class="ad-section">
+            <div class="ad-label">📢 TOP BANNER AD (728x90)</div>
+            <div id="afriads-top-banner"></div>
+        </div>
+
+        <div class="content">
+            <div class="main-content">
+                <article class="article">
+                    <h2>Kenya's Tech Startup Ecosystem Grows 45% in 2024</h2>
+                    <p>
+                        Nairobi continues to cement its position as East Africa's leading tech hub, 
+                        with new data showing a 45% increase in startup registrations this year. 
+                        The growth is attributed to increased investor confidence and government 
+                        support for digital innovation.
+                    </p>
+                    <p>
+                        Industry experts predict that Kenya will see over 200 new tech startups 
+                        by the end of 2025, with focus areas including fintech, agritech, and 
+                        healthtech solutions tailored for the African market.
+                    </p>
+                </article>
+
+                <!-- MID-CONTENT AD ZONE -->
+                <div class="ad-section">
+                    <div class="ad-label">📢 MID-CONTENT AD (300x250)</div>
+                    <div id="afriads-mid-content"></div>
+                </div>
+
+                <article class="article">
+                    <h2>M-Pesa Launches New Business Features</h2>
+                    <p>
+                        Safaricom has announced new features for M-Pesa for Business, making it 
+                        easier for small and medium enterprises to manage their finances. The 
+                        update includes improved analytics, bulk payment options, and integration 
+                        with popular accounting software.
+                    </p>
+                    <p>
+                        "We're committed to empowering Kenyan businesses with digital tools," 
+                        said the CEO during the launch event in Nairobi. The new features are 
+                        available to all registered business users at no additional cost.
+                    </p>
+                </article>
+            </div>
+
+            <aside class="sidebar">
+                <h3 style="margin-bottom: 20px; color: #333;">Trending Topics</h3>
+                <ul style="list-style: none;">
+                    <li style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
+                        <strong>AI in Agriculture</strong>
+                        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            How artificial intelligence is transforming farming in Kenya
+                        </p>
+                    </li>
+                    <li style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
+                        <strong>5G Network Expansion</strong>
+                        <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            Safaricom announces timeline for nationwide 5G coverage
+                        </p>
+                    </li>
+                </ul>
+
+                <!-- SIDEBAR AD ZONE -->
+                <div class="ad-section" style="margin-top: 30px;">
+                    <div class="ad-label">📢 SIDEBAR AD (300x600)</div>
+                    <div id="afriads-sidebar"></div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- BOTTOM AD ZONE -->
+        <div class="ad-section">
+            <div class="ad-label">📢 BOTTOM AD (728x90)</div>
+            <div id="afriads-bottom"></div>
+        </div>
+
+        <footer>
+            <p>&copy; 2025 Kenya Tech News. Powered by AfriAds</p>
+            <p style="margin-top: 10px; font-size: 0.9em;">
+                🔧 Test Publisher Integration Page
+            </p>
+        </footer>
+    </div>
+
+    <!-- AfriAds Widget Script -->
+    <script>
+    // IMPORTANT: Replace these values with your actual zone_id and website_id
+    // You can get these from your publisher dashboard
+    
+    const WEBSITE_ID = 1;  // Replace with your actual website ID
+    const ZONE_IDS = {
+        topBanner: 1,      // Replace with your actual zone IDs
+        midContent: 1,
+        sidebar: 1,
+        bottom: 1
+    };
+    </script>
+
+    <script src="http://localhost:5000/ad-widget.js"></script>
+    <script>
+    // Load ads when widget is ready
+    window.addEventListener('load', function() {
+        // Top Banner Ad
+        AfriAds.loadAd({
+            zoneId: ZONE_IDS.topBanner,
+            websiteId: WEBSITE_ID,
+            containerId: 'afriads-top-banner'
+        });
+
+        // Mid Content Ad
+        AfriAds.loadAd({
+            zoneId: ZONE_IDS.midContent,
+            websiteId: WEBSITE_ID,
+            containerId: 'afriads-mid-content'
+        });
+
+        // Sidebar Ad
+        AfriAds.loadAd({
+            zoneId: ZONE_IDS.sidebar,
+            websiteId: WEBSITE_ID,
+            containerId: 'afriads-sidebar'
+        });
+
+        // Bottom Ad
+        AfriAds.loadAd({
+            zoneId: ZONE_IDS.bottom,
+            websiteId: WEBSITE_ID,
+            containerId: 'afriads-bottom'
+        });
+    });
+    </script>
+</body>
+</html>

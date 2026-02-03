@@ -4,6 +4,11 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
+const paymentRoutes = require('./routes/paymentRoutes');
+const payoutRoutes = require('./routes/payoutRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const activityRoutes = require('./routes/activityRoutes');
+const adPlacementRoutes = require('./routes/adPlacementRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +41,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/uploads', express.static('src/uploads'));
+app.use('/api/payments', paymentRoutes);
+app.use('/api/payouts', payoutRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/activity', activityRoutes);
+app.use('/api/placements', adPlacementRoutes);
 
 // Rate limiting
 const limiter = rateLimit({

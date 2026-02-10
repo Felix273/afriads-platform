@@ -44,15 +44,15 @@ class DailyReport {
         END as cpm,
         CASE 
           WHEN COUNT(DISTINCT cv.id) > 0 
-          THEN ROUND((SUM(cv.cost)::DECIMAL / COUNT(DISTINCT cv.id)), 4)
+          THEN ROUND((SUM(cv.conversion_value)::DECIMAL / COUNT(DISTINCT cv.id)), 4)
           ELSE 0 
         END as cpa
       FROM impressions i
       LEFT JOIN clicks c ON c.impression_id = i.id 
-        AND DATE(c.created_at) = $1
+        AND DATE(c.timestamp) = $1
       LEFT JOIN conversions cv ON cv.click_id = c.id 
-        AND DATE(cv.created_at) = $1
-      WHERE DATE(i.created_at) = $1
+        AND DATE(cv.timestamp) = $1
+      WHERE DATE(i.timestamp) = $1
       GROUP BY i.campaign_id, i.ad_creative_id, i.website_id
       ON CONFLICT (report_date, campaign_id, ad_creative_id, website_id) 
       DO UPDATE SET

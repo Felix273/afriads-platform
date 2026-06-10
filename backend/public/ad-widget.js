@@ -6,7 +6,9 @@
   window.AfriAds = window.AfriAds || {};
 
   // Configuration
-  const API_BASE_URL = window.location.protocol + '//' + window.location.hostname + (window.location.port ? ':5000' : '') + '/api';
+  const currentScript = document.currentScript || Array.from(document.scripts).find(script => script.src && script.src.includes('ad-widget.js'));
+  const scriptOrigin = currentScript && currentScript.src ? new URL(currentScript.src).origin : window.location.origin;
+  const API_BASE_URL = `${scriptOrigin}/api`;
 
   // Main load ad function
   AfriAds.loadAd = function(config) {
@@ -33,12 +35,12 @@
         if (data.success && data.data) {
           renderAd(container, data.data);
         } else {
-          container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">No ads available</div>';
+          container.innerHTML = '';
         }
       })
       .catch(error => {
         console.error('AfriAds: Error loading ad', error);
-        container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">Ad failed to load</div>';
+        container.innerHTML = '';
       });
   };
 

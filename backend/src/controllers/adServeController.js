@@ -42,6 +42,30 @@ const serveAd = async (req, res) => {
       });
     }
 
+    const zoneResult = await query(
+      `SELECT az.id, az.zone_type, az.dimensions, az.status, w.status as website_status
+       FROM ad_zones az
+       INNER JOIN websites w ON az.website_id = w.id
+       WHERE az.id = $1 AND az.website_id = $2`,
+      [zone_id, website_id]
+    );
+
+    if (zoneResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Ad zone not found for this website'
+      });
+    }
+
+    const zone = zoneResult.rows[0];
+
+    if (zone.status !== 'active' || !['approved', 'active'].includes(zone.website_status)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Ad zone is not available'
+      });
+    }
+
     // Parse user agent
     const { deviceType, os, browser } = parseUserAgent(userAgent);
 
@@ -82,9 +106,28 @@ const serveAd = async (req, res) => {
       WHERE ac.status = 'active'
         AND c.status = 'active'
         AND u.status = 'active'
+        AND ac.ad_type = $5
+        AND ($6::VARCHAR IS NULL OR ac.format IS NULL OR ac.format = $6)
         AND (c.start_date IS NULL OR c.start_date <= NOW())
         AND (c.end_date IS NULL OR c.end_date >= NOW())
         AND (c.total_budget IS NULL OR c.spent_amount < c.total_budget)
+        AND (
+          c.daily_budget IS NULL
+          OR (
+            COALESCE((
+              SELECT SUM(i2.cost)
+              FROM impressions i2
+              WHERE i2.campaign_id = c.id
+              AND DATE(i2.timestamp) = CURRENT_DATE
+            ), 0)
+            + COALESCE((
+              SELECT SUM(c2.cost)
+              FROM clicks c2
+              WHERE c2.campaign_id = c.id
+              AND DATE(c2.timestamp) = CURRENT_DATE
+            ), 0)
+          ) < c.daily_budget
+        )
         AND (tr.countries IS NULL OR $1 = ANY(tr.countries))
         AND (tr.device_types IS NULL OR $2 = ANY(tr.device_types))
         AND (tr.operating_systems IS NULL OR $3 = ANY(tr.operating_systems) OR $3 = 'unknown')
@@ -93,7 +136,14 @@ const serveAd = async (req, res) => {
       LIMIT 1
     `;
 
-    const adResult = await query(adsQuery, [country, deviceType, os, browser]);
+    const adResult = await query(adsQuery, [
+      country,
+      deviceType,
+      os,
+      browser,
+      zone.zone_type,
+      zone.dimensions
+    ]);
 
     console.log('Ads found:', adResult.rows.length);
     if (adResult.rows.length > 0) {
@@ -162,7 +212,7 @@ const serveAd = async (req, res) => {
           ad_type: ad.ad_type
         },
         tracking: {
-          click_url: `${req.protocol}://${req.get('host')}/api/ad-serve/click/${impressionId}`
+          click_url: `${process.env.BASE_URL || `${req.protocol}://${req.get('host')}`}/api/ad-serve/click/${impressionId}`
         }
       }
     });
@@ -197,6 +247,24 @@ const trackClick = async (req, res) => {
     }
 
     const impression = impressionResult.rows[0];
+
+    const adResult = await query(
+      'SELECT destination_url FROM ad_creatives WHERE id = $1',
+      [impression.ad_creative_id]
+    );
+
+    const destinationUrl = adResult.rows[0].destination_url;
+
+    const duplicateClick = await query(
+      `SELECT id FROM clicks
+       WHERE impression_id = $1 AND ip_address = $2
+       LIMIT 1`,
+      [impression_id, ipAddress]
+    );
+
+    if (duplicateClick.rows.length > 0) {
+      return res.redirect(destinationUrl);
+    }
 
     // Get campaign bid info
     const campaignResult = await query(
@@ -239,14 +307,6 @@ const trackClick = async (req, res) => {
         [cost, impression.campaign_id]
       );
     }
-
-    // Get destination URL
-    const adResult = await query(
-      'SELECT destination_url FROM ad_creatives WHERE id = $1',
-      [impression.ad_creative_id]
-    );
-
-    const destinationUrl = adResult.rows[0].destination_url;
 
     // Redirect to destination
     res.redirect(destinationUrl);
@@ -315,8 +375,129 @@ const getAdStats = async (req, res) => {
   }
 };
 
+// Track conversion
+const trackConversion = async (req, res) => {
+  try {
+    const { impression_id, conversion_type, conversion_value } = req.body;
+
+    if (!impression_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'impression_id is required'
+      });
+    }
+
+    // Get impression details
+    const impressionResult = await query(
+      'SELECT * FROM impressions WHERE id = $1',
+      [impression_id]
+    );
+
+    if (impressionResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Impression not found'
+      });
+    }
+
+    const impression = impressionResult.rows[0];
+
+    // Get click for this impression (if exists)
+    const clickResult = await query(
+      'SELECT id FROM clicks WHERE impression_id = $1 ORDER BY timestamp DESC LIMIT 1',
+      [impression_id]
+    );
+
+    if (clickResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No click found for this impression'
+      });
+    }
+
+    const click = clickResult.rows[0];
+
+    // Get campaign bid info
+    const campaignResult = await query(
+      'SELECT bid_type, bid_amount FROM campaigns WHERE id = $1',
+      [impression.campaign_id]
+    );
+
+    const campaign = campaignResult.rows[0];
+
+    // Calculate cost for conversion (if CPA)
+    let cost = 0;
+    if (campaign.bid_type === 'cpa') {
+      cost = parseFloat(campaign.bid_amount);
+    }
+
+    // Record conversion
+    const conversionResult = await query(
+      `INSERT INTO conversions 
+       (click_id, campaign_id, conversion_type, conversion_value)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      [
+        click.id,
+        impression.campaign_id,
+        conversion_type || 'sale',
+        conversion_value || cost
+      ]
+    );
+
+    // Update campaign spend if CPA
+    if (cost > 0) {
+      await query(
+        'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
+        [cost, impression.campaign_id]
+      );
+    }
+
+    res.json({
+      success: true,
+      data: {
+        conversion_id: conversionResult.rows[0].id,
+        message: 'Conversion tracked successfully'
+      }
+    });
+  } catch (error) {
+    console.error('Track conversion error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to track conversion',
+      error: error.message
+    });
+  }
+};
+
+// Fraud detection - check if IP is blocked
+const checkBlockedIP = async (req, res, next) => {
+  try {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+
+    const result = await query(
+      'SELECT * FROM blocked_ips WHERE ip_address = $1 AND (block_type = $2 OR expires_at > NOW())',
+      [ipAddress, 'permanent']
+    );
+
+    if (result.rows.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Check blocked IP error:', error);
+    next();
+  }
+};
+
 module.exports = {
   serveAd,
   trackClick,
-  getAdStats
+  getAdStats,
+  trackConversion,
+  checkBlockedIP
 };

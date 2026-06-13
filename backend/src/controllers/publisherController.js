@@ -242,6 +242,7 @@ const getAdTag = async (req, res) => {
     }
 
     const websiteId = zoneCheck.rows[0].website_id;
+    const publicBaseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
 
     // Generate ad tag code
     const adTag = `<!-- AfriAds Ad Zone ${zone_id} -->
@@ -249,7 +250,7 @@ const getAdTag = async (req, res) => {
 <script>
 (function() {
   var script = document.createElement('script');
-  script.src = '${req.protocol}://${req.get('host')}/ad-widget.js';
+  script.src = '${publicBaseUrl}/ad-widget.js';
   script.async = true;
   script.onload = function() {
     AfriAds.loadAd({

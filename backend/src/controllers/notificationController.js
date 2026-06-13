@@ -101,7 +101,7 @@ class NotificationController {
       }
 
       // Delete notification
-      const pool = require('../config/database');
+      const { pool } = require('../config/database');
       await pool.query('DELETE FROM notifications WHERE id = $1', [id]);
 
       res.json({

@@ -1,5 +1,5 @@
 // models/Payment.js
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class Payment {
   static async create(paymentData) {
@@ -54,14 +54,42 @@ class Payment {
     return result.rows[0];
   }
 
-  static async updateStatus(id, status, paid_at = null) {
+  static async findByMpesaRequest(merchantRequestId, checkoutRequestId) {
+    const result = await pool.query(
+      `SELECT * FROM payments
+       WHERE payment_method = 'mpesa'
+       AND (
+         metadata->>'MerchantRequestID' = $1
+         OR metadata->>'CheckoutRequestID' = $2
+         OR metadata->'mpesa_response'->>'MerchantRequestID' = $1
+         OR metadata->'mpesa_response'->>'CheckoutRequestID' = $2
+       )
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [merchantRequestId || null, checkoutRequestId || null]
+    );
+    return result.rows[0];
+  }
+
+  static async updateStatus(id, status, paid_at = null, metadata = null) {
     const query = `
       UPDATE payments 
-      SET status = $1, paid_at = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
+      SET status = $1,
+          paid_at = $2,
+          metadata = CASE
+            WHEN $3::JSONB IS NULL THEN metadata
+            ELSE COALESCE(metadata, '{}'::JSONB) || $3::JSONB
+          END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
       RETURNING *
     `;
-    const result = await pool.query(query, [status, paid_at, id]);
+    const result = await pool.query(query, [
+      status,
+      paid_at,
+      metadata ? JSON.stringify(metadata) : null,
+      id
+    ]);
     return result.rows[0];
   }
 

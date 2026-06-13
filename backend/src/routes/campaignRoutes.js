@@ -6,11 +6,11 @@ const { authenticate, isAdvertiser } = require('../middleware/auth');
 const adCreativeController = require('../controllers/adCreativeController');
 const upload = require('../middleware/upload');
 
-// Image upload route
-router.post('/creatives/upload', upload.single('image'), adCreativeController.uploadImage);
-
 // All routes require authentication and advertiser role
 router.use(authenticate, isAdvertiser);
+
+// Image upload route
+router.post('/creatives/upload', upload.single('image'), adCreativeController.uploadImage);
 
 // Campaign CRUD
 router.post('/', campaignController.createCampaign);

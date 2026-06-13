@@ -1,5 +1,5 @@
 // models/AdPlacement.js
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class AdPlacement {
   static async create(placementData) {
@@ -46,12 +46,13 @@ class AdPlacement {
   }
 
   static async update(id, updateData) {
+    const allowedFields = new Set(['name', 'placement_type', 'ad_format', 'status']);
     const fields = [];
     const values = [];
     let paramCount = 1;
 
     Object.keys(updateData).forEach(key => {
-      if (updateData[key] !== undefined) {
+      if (allowedFields.has(key) && updateData[key] !== undefined) {
         fields.push(`${key} = $${paramCount}`);
         values.push(updateData[key]);
         paramCount++;

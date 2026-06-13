@@ -203,6 +203,46 @@ const updateCampaign = async (req, res) => {
       });
     }
 
+    if (status && !['draft', 'active', 'paused', 'completed', 'expired'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid campaign status'
+      });
+    }
+
+    if (status === 'active') {
+      const creativeCheck = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status IN ('approved', 'active')) as ready_count,
+           COUNT(*) as total_count
+         FROM ad_creatives
+         WHERE campaign_id = $1`,
+        [id]
+      );
+
+      if (parseInt(creativeCheck.rows[0].total_count, 10) === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Add at least one ad creative before activating this campaign'
+        });
+      }
+
+      if (parseInt(creativeCheck.rows[0].ready_count, 10) === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one ad creative must be approved before activating this campaign'
+        });
+      }
+
+      await query(
+        `UPDATE ad_creatives
+         SET status = 'active'
+         WHERE campaign_id = $1
+         AND status = 'approved'`,
+        [id]
+      );
+    }
+
     // Update campaign
     const result = await query(
       `UPDATE campaigns 

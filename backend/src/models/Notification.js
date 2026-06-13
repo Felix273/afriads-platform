@@ -1,5 +1,5 @@
 // models/Notification.js
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class Notification {
   static async create(notificationData) {
@@ -66,10 +66,9 @@ class Notification {
       UPDATE notifications 
       SET is_read = true, read_at = CURRENT_TIMESTAMP
       WHERE user_id = $1 AND is_read = false
-      RETURNING COUNT(*) as updated_count
     `;
     const result = await pool.query(query, [userId]);
-    return result.rows[0];
+    return { updated_count: result.rowCount };
   }
 
   static async deleteOld(days = 30) {

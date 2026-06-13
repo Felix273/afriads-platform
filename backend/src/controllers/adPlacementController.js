@@ -1,6 +1,6 @@
 // controllers/adPlacementController.js
 const AdPlacement = require('../models/AdPlacement');
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class AdPlacementController {
   // Create ad placement

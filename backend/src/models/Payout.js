@@ -1,5 +1,5 @@
 // models/Payout.js
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class Payout {
   static async create(payoutData) {
@@ -45,32 +45,29 @@ class Payout {
   }
 
   static async updateStatus(id, status, transaction_id = null) {
-    let query = `
-      UPDATE payouts 
-      SET status = $1, updated_at = CURRENT_TIMESTAMP
-    `;
     const values = [status];
-    let paramCount = 1;
+    const fields = ['status = $1', 'updated_at = CURRENT_TIMESTAMP'];
 
     if (status === 'processing') {
-      paramCount++;
-      query += `, processed_at = CURRENT_TIMESTAMP`;
+      fields.push('processed_at = CURRENT_TIMESTAMP');
     }
 
     if (status === 'completed') {
-      paramCount++;
-      query += `, completed_at = CURRENT_TIMESTAMP`;
+      fields.push('completed_at = CURRENT_TIMESTAMP');
     }
 
     if (transaction_id) {
-      paramCount++;
-      query += `, transaction_id = $${paramCount}`;
       values.push(transaction_id);
+      fields.push(`transaction_id = $${values.length}`);
     }
 
-    paramCount++;
-    query += ` WHERE id = $${paramCount} RETURNING *`;
     values.push(id);
+    const query = `
+      UPDATE payouts 
+      SET ${fields.join(', ')}
+      WHERE id = $${values.length}
+      RETURNING *
+    `;
 
     const result = await pool.query(query, values);
     return result.rows[0];

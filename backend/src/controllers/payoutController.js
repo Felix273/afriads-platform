@@ -2,7 +2,7 @@
 const Payout = require('../models/Payout');
 const Notification = require('../models/Notification');
 const ActivityLog = require('../models/ActivityLog');
-const pool = require('../config/database');
+const { pool } = require('../config/database');
 
 class PayoutController {
   // Request a payout

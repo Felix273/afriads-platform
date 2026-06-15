@@ -13,6 +13,7 @@ const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
 // Import database and redis
 const { pool } = require('./config/database');
@@ -27,7 +28,11 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        ...(isDevelopment ? ["'unsafe-eval'"] : [])
+      ],
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:", "http:"],

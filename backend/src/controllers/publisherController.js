@@ -55,15 +55,35 @@ const getWebsites = async (req, res) => {
   try {
     const result = await query(
       `SELECT w.*, 
-              COUNT(DISTINCT az.id) as zones_count,
-              COALESCE(SUM(wr.earnings), 0) as total_earnings,
-              COALESCE(SUM(wr.impressions), 0) as total_impressions,
-              COALESCE(SUM(wr.clicks), 0) as total_clicks
+              COALESCE(z.zones_count, 0)::INTEGER as zones_count,
+              (COALESCE(i.impressions, 0) + COALESCE(wr.reported_impressions, 0))::INTEGER as total_impressions,
+              (COALESCE(c.clicks, 0) + COALESCE(wr.reported_clicks, 0))::INTEGER as total_clicks,
+              (COALESCE(i.impression_earnings, 0) + COALESCE(c.click_earnings, 0) + COALESCE(wr.reported_earnings, 0))::DECIMAL(10, 2) as total_earnings
        FROM websites w
-       LEFT JOIN ad_zones az ON w.id = az.website_id
-       LEFT JOIN website_reports wr ON w.id = wr.website_id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as zones_count
+         FROM ad_zones
+         GROUP BY website_id
+       ) z ON z.website_id = w.id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost), 0) as impression_earnings
+         FROM impressions
+         GROUP BY website_id
+       ) i ON i.website_id = w.id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost), 0) as click_earnings
+         FROM clicks
+         GROUP BY website_id
+       ) c ON c.website_id = w.id
+       LEFT JOIN (
+         SELECT website_id,
+                COALESCE(SUM(impressions), 0) as reported_impressions,
+                COALESCE(SUM(clicks), 0) as reported_clicks,
+                COALESCE(SUM(earnings), 0) as reported_earnings
+         FROM website_reports
+         GROUP BY website_id
+       ) wr ON wr.website_id = w.id
        WHERE w.publisher_id = $1
-       GROUP BY w.id
        ORDER BY w.created_at DESC`,
       [req.user.id]
     );
@@ -89,11 +109,28 @@ const getWebsite = async (req, res) => {
 
     const result = await query(
       `SELECT w.*,
-              COUNT(DISTINCT az.id) as zones_count
+              COALESCE(z.zones_count, 0)::INTEGER as zones_count,
+              COALESCE(i.impressions, 0)::INTEGER as total_impressions,
+              COALESCE(c.clicks, 0)::INTEGER as total_clicks,
+              (COALESCE(i.impression_earnings, 0) + COALESCE(c.click_earnings, 0))::DECIMAL(10, 2) as total_earnings
        FROM websites w
-       LEFT JOIN ad_zones az ON w.id = az.website_id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as zones_count
+         FROM ad_zones
+         GROUP BY website_id
+       ) z ON z.website_id = w.id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost), 0) as impression_earnings
+         FROM impressions
+         GROUP BY website_id
+       ) i ON i.website_id = w.id
+       LEFT JOIN (
+         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost), 0) as click_earnings
+         FROM clicks
+         GROUP BY website_id
+       ) c ON c.website_id = w.id
        WHERE w.id = $1 AND w.publisher_id = $2
-       GROUP BY w.id`,
+       GROUP BY w.id, z.zones_count, i.impressions, i.impression_earnings, c.clicks, c.click_earnings`,
       [id, req.user.id]
     );
 
@@ -195,13 +232,21 @@ const getAdZones = async (req, res) => {
 
     const result = await query(
       `SELECT az.*,
-              COUNT(DISTINCT i.id) as total_impressions,
-              COUNT(DISTINCT c.id) as total_clicks
+              COALESCE(i.total_impressions, 0)::INTEGER as total_impressions,
+              COALESCE(c.total_clicks, 0)::INTEGER as total_clicks,
+              (COALESCE(i.impression_earnings, 0) + COALESCE(c.click_earnings, 0))::DECIMAL(10, 2) as total_earnings
        FROM ad_zones az
-       LEFT JOIN impressions i ON az.id = i.ad_zone_id
-       LEFT JOIN clicks c ON az.id = c.ad_zone_id
+       LEFT JOIN (
+         SELECT ad_zone_id, COUNT(*) as total_impressions, COALESCE(SUM(cost), 0) as impression_earnings
+         FROM impressions
+         GROUP BY ad_zone_id
+       ) i ON i.ad_zone_id = az.id
+       LEFT JOIN (
+         SELECT ad_zone_id, COUNT(*) as total_clicks, COALESCE(SUM(cost), 0) as click_earnings
+         FROM clicks
+         GROUP BY ad_zone_id
+       ) c ON c.ad_zone_id = az.id
        WHERE az.website_id = $1
-       GROUP BY az.id
        ORDER BY az.created_at DESC`,
       [website_id]
     );
@@ -287,29 +332,54 @@ const getEarnings = async (req, res) => {
     const { start_date, end_date } = req.query;
 
     let queryText = `
-      SELECT 
-        wr.report_date,
+      WITH impression_daily AS (
+        SELECT
+          DATE(i.timestamp) as report_date,
+          i.website_id,
+          COUNT(*)::INTEGER as impressions,
+          COALESCE(SUM(i.cost), 0) as impression_earnings
+        FROM impressions i
+        INNER JOIN websites w ON w.id = i.website_id
+        WHERE w.publisher_id = $1
+        GROUP BY DATE(i.timestamp), i.website_id
+      ),
+      click_daily AS (
+        SELECT
+          DATE(c.timestamp) as report_date,
+          c.website_id,
+          COUNT(*)::INTEGER as clicks,
+          COALESCE(SUM(c.cost), 0) as click_earnings
+        FROM clicks c
+        INNER JOIN websites w ON w.id = c.website_id
+        WHERE w.publisher_id = $1
+        GROUP BY DATE(c.timestamp), c.website_id
+      )
+      SELECT
+        COALESCE(i.report_date, c.report_date) as report_date,
         w.name as website_name,
-        wr.impressions,
-        wr.clicks,
-        wr.earnings
-      FROM website_reports wr
-      INNER JOIN websites w ON wr.website_id = w.id
+        COALESCE(i.impressions, 0)::INTEGER as impressions,
+        COALESCE(c.clicks, 0)::INTEGER as clicks,
+        (COALESCE(i.impression_earnings, 0) + COALESCE(c.click_earnings, 0))::DECIMAL(10, 2) as earnings
+      FROM impression_daily i
+      FULL OUTER JOIN click_daily c
+        ON i.website_id = c.website_id
+       AND i.report_date = c.report_date
+      INNER JOIN websites w ON w.id = COALESCE(i.website_id, c.website_id)
       WHERE w.publisher_id = $1
     `;
     const params = [req.user.id];
 
     if (start_date) {
-      queryText += ` AND wr.report_date >= $${params.length + 1}`;
+      queryText += ` AND COALESCE(i.report_date, c.report_date) >= $${params.length + 1}`;
       params.push(start_date);
     }
 
     if (end_date) {
-      queryText += ` AND wr.report_date <= $${params.length + 1}`;
+      queryText += ` AND COALESCE(i.report_date, c.report_date) <= $${params.length + 1}`;
       params.push(end_date);
     }
 
-    queryText += ' ORDER BY wr.report_date DESC';
+    queryText += ' ORDER BY report_date DESC, website_name ASC';
 
     const result = await query(queryText, params);
 

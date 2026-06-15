@@ -24,7 +24,7 @@ const pool = new Pool({
   ...databaseConfig,
   max: 20, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '15000', 10),
 });
 
 // Test database connection

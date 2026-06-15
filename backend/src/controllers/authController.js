@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 
+const jwtExpiresIn = process.env.JWT_EXPIRE || '7d';
+
 // Register new user
 const register = async (req, res) => {
   try {
@@ -78,7 +80,7 @@ const register = async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, userType: user.user_type },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      { expiresIn: jwtExpiresIn }
     );
 
     res.status(201).json({
@@ -149,7 +151,7 @@ const login = async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, userType: user.user_type },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
+      { expiresIn: jwtExpiresIn }
     );
 
     // Remove password from response

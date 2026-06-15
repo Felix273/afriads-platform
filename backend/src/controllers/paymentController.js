@@ -146,10 +146,17 @@ class PaymentController {
             transactionDescription: description || 'AfriAds wallet top up'
           });
         } catch (mpesaError) {
+          const mpesaErrorData = mpesaError.response?.data || null;
           await Payment.updateStatus(payment.id, 'failed', null, {
-            mpesa_initiation_error: mpesaError.response?.data || mpesaError.message
+            mpesa_initiation_error: mpesaErrorData || mpesaError.message
           });
-          throw mpesaError;
+
+          return res.status(mpesaError.response?.status || mpesaError.statusCode || 502).json({
+            success: false,
+            error: mpesaErrorData?.errorMessage || mpesaError.message || 'Failed to initiate M-Pesa payment',
+            payment_id: payment.id,
+            mpesa_error: mpesaErrorData
+          });
         }
 
         await Payment.updateStatus(payment.id, 'pending', null, {

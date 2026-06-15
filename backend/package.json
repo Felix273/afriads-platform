@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "generate-reports": "node src/jobs/generateDailyReports.js",
+    "reset-test-users": "node scripts/reset-test-users.js",
     "test": "node --check src/server.js && node --check src/controllers/paymentController.js && node --check src/controllers/adminController.js && node --check src/controllers/adServeController.js && node --check src/controllers/campaignController.js && node --check src/models/Payment.js && node --check src/services/mpesaService.js"
   },
 

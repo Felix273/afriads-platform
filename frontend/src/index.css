@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    background: #f7f5ef;
+    color: #151713;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  * {
+    letter-spacing: 0;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-md bg-[#151713] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#2f332c] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-[#151713] transition hover:bg-[#eeebe1] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .form-label {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-[#777c72];
+  }
+
+  .form-input {
+    @apply w-full rounded-md border border-black/10 bg-white px-4 py-3 text-sm text-[#151713] outline-none transition placeholder:text-[#9a9f94] focus:border-[#2f6f4e] focus:ring-4 focus:ring-[#2f6f4e]/10 disabled:cursor-not-allowed disabled:bg-[#eeebe1];
+  }
+
+  .section-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-[#2f6f4e];
+  }
+
+  .section-title {
+    @apply mt-4 max-w-3xl text-4xl font-semibold leading-tight tracking-tight text-[#151713] sm:text-5xl;
+  }
+
+  .feature-panel {
+    @apply rounded-xl border border-black/10 bg-[#f7f5ef] p-6 transition hover:border-[#2f6f4e]/30;
+  }
+
+  .dashboard-preview {
+    @apply overflow-hidden rounded-xl border border-black/10 bg-[#f0eee7] shadow-[0_24px_80px_rgba(21,23,19,0.14)];
+  }
+
+  .app-shell {
+    @apply min-h-screen bg-[#f7f5ef] text-[#151713];
+  }
+
+  .app-header {
+    @apply border-b border-black/10 bg-white;
+  }
+
+  .metric-card {
+    @apply rounded-lg border border-black/10 bg-white p-5;
+  }
+
+  .data-card {
+    @apply rounded-lg border border-black/10 bg-white;
+  }
+
+  .aa-wide {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .aa-heading {
+    @apply text-4xl font-semibold leading-tight tracking-tight text-[#151713] sm:text-5xl;
+  }
+
+  .aa-body {
+    @apply text-sm leading-6 text-[#5d6258] sm:text-base;
+  }
+
+  .aa-display {
+    @apply text-5xl font-semibold leading-tight sm:text-7xl;
+  }
+
+  .aa-table {
+    @apply min-w-full text-left text-sm;
+  }
+
+  .aa-table thead tr {
+    @apply border-b border-black/10 text-xs font-semibold uppercase text-[#6b7268];
+  }
+
+  .aa-table th,
+  .aa-table td {
+    @apply px-4 py-4;
+  }
+
+  .aa-table tbody {
+    @apply divide-y divide-[#ebe7dc];
+  }
+
+  .aa-link {
+    @apply text-sm font-semibold text-[#2f6f4e] hover:underline;
+  }
+}

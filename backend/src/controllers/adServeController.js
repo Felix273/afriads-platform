@@ -1,9 +1,154 @@
 // src/controllers/adServeController.js
-const { query } = require('../config/database');
+const geoip = require('geoip-lite');
+const { query, transaction } = require('../config/database');
+
+const COUNTRY_NAME_MAP = {
+  KE: 'Kenya',
+  US: 'United States',
+  NG: 'Nigeria',
+  ZA: 'South Africa',
+  GH: 'Ghana',
+  TZ: 'Tanzania',
+  UG: 'Uganda',
+  RW: 'Rwanda',
+  GB: 'United Kingdom',
+  CA: 'Canada'
+};
+
+// Bot & Crawler Detection
+const IS_BOT_REGEX = /(bot|crawler|spider|slurp|headless|phantomjs|selenium|puppeteer|python-requests|curl\/|wget\/)/i;
+
+const isBotUserAgent = (userAgent) => {
+  if (!userAgent) return false;
+  return IS_BOT_REGEX.test(userAgent);
+};
+
+// GeoIP location lookup helper
+const getGeoLocation = (ipAddress) => {
+  if (!ipAddress) {
+    return { countryCode: 'KE', country: 'Kenya', city: 'Nairobi' };
+  }
+
+  let cleanIp = ipAddress.toString().trim();
+  if (cleanIp.startsWith('::ffff:')) {
+    cleanIp = cleanIp.substring(7);
+  }
+
+  if (
+    cleanIp === '127.0.0.1' ||
+    cleanIp === '::1' ||
+    cleanIp.startsWith('10.') ||
+    cleanIp.startsWith('192.168.') ||
+    cleanIp.startsWith('172.16.')
+  ) {
+    return { countryCode: 'KE', country: 'Kenya', city: 'Nairobi' };
+  }
+
+  const geo = geoip.lookup(cleanIp);
+  if (geo) {
+    const countryCode = geo.country || 'KE';
+    const countryName = COUNTRY_NAME_MAP[countryCode] || countryCode;
+    const city = geo.city || (countryCode === 'KE' ? 'Nairobi' : 'Unknown');
+    return { countryCode, country: countryName, city };
+  }
+
+  return { countryCode: 'KE', country: 'Kenya', city: 'Nairobi' };
+};
+
+// Process financial transactions (advertiser deduction & publisher crediting)
+const processFinancials = async ({ campaignId, advertiserId, websiteId, cost, refType, refId }) => {
+  if (!cost || cost <= 0) return;
+
+  const REVENUE_SHARE = parseFloat(process.env.PUBLISHER_REVENUE_SHARE || '0.70');
+  const publisherEarning = parseFloat((cost * REVENUE_SHARE).toFixed(4));
+
+  await transaction(async (client) => {
+    // 1. Update campaign spent_amount and status if total budget exhausted
+    await client.query(
+      `UPDATE campaigns
+       SET spent_amount = spent_amount + $1,
+           status = CASE
+             WHEN (total_budget IS NOT NULL AND (spent_amount + $1) >= total_budget) THEN 'completed'
+             ELSE status
+           END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [cost, campaignId]
+    );
+
+    // 2. Deduct cost from advertiser balance
+    let currentAdvertiserId = advertiserId;
+    if (!currentAdvertiserId) {
+      const cRes = await client.query('SELECT advertiser_id FROM campaigns WHERE id = $1', [campaignId]);
+      if (cRes.rows.length > 0) {
+        currentAdvertiserId = cRes.rows[0].advertiser_id;
+      }
+    }
+
+    if (currentAdvertiserId) {
+      const advResult = await client.query(
+        `UPDATE users
+         SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING balance`,
+        [cost, currentAdvertiserId]
+      );
+
+      if (advResult.rows.length > 0) {
+        const newBalance = advResult.rows[0].balance;
+        await client.query(
+          `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+           VALUES ($1, 'ad_spend', $2, $3, $4, $5, 'completed')`,
+          [
+            currentAdvertiserId,
+            cost,
+            newBalance,
+            `Ad spend for ${refType} #${refId}`,
+            `${refType}_${refId}`
+          ]
+        );
+      }
+    }
+
+    // 3. Credit publisher balance
+    if (websiteId) {
+      const pubRes = await client.query(
+        'SELECT publisher_id FROM websites WHERE id = $1',
+        [websiteId]
+      );
+
+      if (pubRes.rows.length > 0 && pubRes.rows[0].publisher_id) {
+        const publisherId = pubRes.rows[0].publisher_id;
+        const pubUpdateRes = await client.query(
+          `UPDATE users
+           SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = $2
+           RETURNING balance`,
+          [publisherEarning, publisherId]
+        );
+
+        if (pubUpdateRes.rows.length > 0) {
+          const newPubBalance = pubUpdateRes.rows[0].balance;
+          await client.query(
+            `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+             VALUES ($1, 'earnings', $2, $3, $4, $5, 'completed')`,
+            [
+              publisherId,
+              publisherEarning,
+              newPubBalance,
+              `Earnings for ${refType} #${refId}`,
+              `${refType}_${refId}`
+            ]
+          );
+        }
+      }
+    }
+  });
+};
 
 // Helper function to parse user agent
 const parseUserAgent = (userAgent) => {
-  const ua = userAgent.toLowerCase();
+  const ua = (userAgent || '').toLowerCase();
   
   let deviceType = 'desktop';
   if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(userAgent)) {
@@ -14,16 +159,16 @@ const parseUserAgent = (userAgent) => {
 
   let os = 'unknown';
   if (ua.includes('windows')) os = 'windows';
-  else if (ua.includes('mac')) os = 'macos';
-  else if (ua.includes('linux')) os = 'linux';
   else if (ua.includes('android')) os = 'android';
   else if (ua.includes('ios') || ua.includes('iphone') || ua.includes('ipad')) os = 'ios';
+  else if (ua.includes('mac') || ua.includes('darwin')) os = 'macos';
+  else if (ua.includes('linux')) os = 'linux';
 
   let browser = 'unknown';
-  if (ua.includes('chrome')) browser = 'chrome';
-  else if (ua.includes('safari')) browser = 'safari';
-  else if (ua.includes('firefox')) browser = 'firefox';
-  else if (ua.includes('edge')) browser = 'edge';
+  if (ua.includes('edg/') || ua.includes('edge')) browser = 'edge';
+  else if (ua.includes('chrome') || ua.includes('crios')) browser = 'chrome';
+  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'safari';
+  else if (ua.includes('firefox') || ua.includes('fxios')) browser = 'firefox';
 
   return { deviceType, os, browser };
 };
@@ -39,6 +184,14 @@ const serveAd = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'zone_id and website_id are required'
+      });
+    }
+
+    // Check if request is from a bot / web crawler
+    if (isBotUserAgent(userAgent)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Automated request rejected'
       });
     }
 
@@ -66,21 +219,35 @@ const serveAd = async (req, res) => {
       });
     }
 
+    // Check impression spam rate (> 30 impressions/min from same IP for same zone)
+    const recentImpressionsRes = await query(
+      `SELECT COUNT(*) FROM impressions
+       WHERE ip_address = $1 AND ad_zone_id = $2 AND timestamp > NOW() - INTERVAL '1 minute'`,
+      [ipAddress, zone_id]
+    );
+    const recentImpressionCount = parseInt(recentImpressionsRes.rows[0].count, 10);
+    if (recentImpressionCount > 30) {
+      return res.status(429).json({
+        success: false,
+        message: 'Impression rate limit exceeded'
+      });
+    }
+
     // Parse user agent
     const { deviceType, os, browser } = parseUserAgent(userAgent);
 
-    // Get country from IP (for now, we'll use a placeholder - you can integrate with GeoIP later)
-    const country = 'Kenya'; // TODO: Implement GeoIP lookup
-    const city = 'Nairobi'; // TODO: Implement GeoIP lookup
+    // GeoIP location lookup
+    const { countryCode, country, city } = getGeoLocation(ipAddress);
 
     // Debug logging
-    console.log('Ad Request:', { zone_id, website_id, deviceType, os, browser, country, city });
+    console.log('Ad Request:', { zone_id, website_id, deviceType, os, browser, country, countryCode, city, ipAddress });
 
     // Find matching ads based on targeting
     const adsQuery = `
       SELECT 
         ac.id as creative_id,
         ac.campaign_id,
+        c.advertiser_id,
         ac.name,
         ac.ad_type,
         ac.format,
@@ -106,6 +273,7 @@ const serveAd = async (req, res) => {
       WHERE ac.status = 'active'
         AND c.status = 'active'
         AND u.status = 'active'
+        AND u.balance > 0
         AND ac.ad_type = $5
         AND ($6::VARCHAR IS NULL OR ac.format IS NULL OR ac.format = $6)
         AND (c.start_date IS NULL OR c.start_date <= NOW())
@@ -128,7 +296,7 @@ const serveAd = async (req, res) => {
             ), 0)
           ) < c.daily_budget
         )
-        AND (tr.countries IS NULL OR $1 = ANY(tr.countries))
+        AND (tr.countries IS NULL OR $1 = ANY(tr.countries) OR $7 = ANY(tr.countries))
         AND (tr.device_types IS NULL OR $2 = ANY(tr.device_types))
         AND (tr.operating_systems IS NULL OR $3 = ANY(tr.operating_systems) OR $3 = 'unknown')
         AND (tr.browsers IS NULL OR $4 = ANY(tr.browsers) OR $4 = 'unknown')
@@ -142,7 +310,8 @@ const serveAd = async (req, res) => {
       os,
       browser,
       zone.zone_type,
-      zone.dimensions
+      zone.dimensions,
+      countryCode
     ]);
 
     console.log('Ads found:', adResult.rows.length);
@@ -190,11 +359,17 @@ const serveAd = async (req, res) => {
 
     const impressionId = impressionResult.rows[0].id;
 
-    // Update campaign spend
-    await query(
-      'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-      [cost, ad.campaign_id]
-    );
+    // Process financial transactions for impression (if cost > 0)
+    if (cost > 0) {
+      await processFinancials({
+        campaignId: ad.campaign_id,
+        advertiserId: ad.advertiser_id,
+        websiteId: website_id,
+        cost,
+        refType: 'impression',
+        refId: impressionId
+      });
+    }
 
     // Return ad data
     res.json({
@@ -266,6 +441,37 @@ const trackClick = async (req, res) => {
       return res.redirect(destinationUrl);
     }
 
+    // Check click spam rate from this IP (> 10 clicks in 1 minute)
+    const recentClicksRes = await query(
+      `SELECT COUNT(*) FROM clicks
+       WHERE ip_address = $1 AND timestamp > NOW() - INTERVAL '1 minute'`,
+      [ipAddress]
+    );
+    const recentClickCount = parseInt(recentClicksRes.rows[0].count, 10);
+
+    if (recentClickCount >= 10) {
+      console.warn(`Click spam detected from IP: ${ipAddress} (${recentClickCount} clicks/min)`);
+
+      // Auto-block IP temporarily for 15 minutes if >= 20 clicks in 1 minute
+      if (recentClickCount >= 20) {
+        await query(
+          `INSERT INTO blocked_ips (ip_address, reason, block_type, expires_at)
+           VALUES ($1, 'Automated click spam threshold exceeded', 'temporary', NOW() + INTERVAL '15 minutes')
+           ON CONFLICT (ip_address) DO UPDATE
+           SET expires_at = NOW() + INTERVAL '15 minutes', reason = EXCLUDED.reason`,
+          [ipAddress]
+        );
+      }
+
+      // Redirect user to destination without recording or charging for the click
+      return res.redirect(destinationUrl);
+    }
+
+    // Check if user agent is bot
+    if (isBotUserAgent(userAgent)) {
+      return res.redirect(destinationUrl);
+    }
+
     // Get campaign bid info
     const campaignResult = await query(
       'SELECT bid_type, bid_amount FROM campaigns WHERE id = $1',
@@ -281,10 +487,11 @@ const trackClick = async (req, res) => {
     }
 
     // Record click
-    await query(
+    const clickResult = await query(
       `INSERT INTO clicks 
        (impression_id, ad_creative_id, campaign_id, website_id, ad_zone_id, ip_address, user_agent, country, city, device_type, cost)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id`,
       [
         impression_id,
         impression.ad_creative_id,
@@ -300,12 +507,18 @@ const trackClick = async (req, res) => {
       ]
     );
 
-    // Update campaign spend if CPC
+    const clickId = clickResult.rows[0].id;
+
+    // Process financial transactions if CPC
     if (cost > 0) {
-      await query(
-        'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-        [cost, impression.campaign_id]
-      );
+      await processFinancials({
+        campaignId: impression.campaign_id,
+        advertiserId: null,
+        websiteId: impression.website_id,
+        cost,
+        refType: 'click',
+        refId: clickId
+      });
     }
 
     // Redirect to destination
@@ -445,12 +658,18 @@ const trackConversion = async (req, res) => {
       ]
     );
 
-    // Update campaign spend if CPA
+    const conversionId = conversionResult.rows[0].id;
+
+    // Process financial transactions if CPA
     if (cost > 0) {
-      await query(
-        'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-        [cost, impression.campaign_id]
-      );
+      await processFinancials({
+        campaignId: impression.campaign_id,
+        advertiserId: null,
+        websiteId: impression.website_id,
+        cost,
+        refType: 'conversion',
+        refId: conversionId
+      });
     }
 
     res.json({

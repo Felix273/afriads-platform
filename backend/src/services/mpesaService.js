@@ -77,6 +77,22 @@ const normalizePhoneNumber = (phoneNumber) => {
   return null;
 };
 
+const sanitizeMpesaText = (value, fallback, maxLength) => {
+  const text = String(value || fallback)
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (text || fallback).slice(0, maxLength);
+};
+
+const buildAccountReference = (accountReference, fallbackPrefix) => {
+  const digits = String(accountReference || '').replace(/\D/g, '');
+  const prefix = String(fallbackPrefix || 'AFRIADS').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'AFRIADS';
+
+  return `${prefix}${digits}`.slice(0, 12);
+};
+
 const getAccessToken = async () => {
   const config = getMpesaConfig();
   assertConfigured(config);
@@ -115,7 +131,12 @@ const initiateSTKPush = async ({ amount, phoneNumber, accountReference, transact
     .from(`${config.businessShortCode}${config.passkey}${timestamp}`)
     .toString('base64');
   const roundedAmount = Math.ceil(Number(amount));
-  const reference = String(accountReference || config.accountReferencePrefix).slice(0, 12);
+  const reference = buildAccountReference(accountReference, config.accountReferencePrefix);
+  const description = sanitizeMpesaText(
+    transactionDescription,
+    'AfriAds wallet top up',
+    100
+  );
 
   const payload = {
     BusinessShortCode: config.businessShortCode,
@@ -128,7 +149,7 @@ const initiateSTKPush = async ({ amount, phoneNumber, accountReference, transact
     PhoneNumber: normalizedPhone,
     CallBackURL: config.callbackUrl,
     AccountReference: reference,
-    TransactionDesc: String(transactionDescription || 'AfriAds wallet top up').slice(0, 100)
+    TransactionDesc: description
   };
 
   const response = await axios.post(

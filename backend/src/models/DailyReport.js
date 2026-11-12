@@ -116,6 +116,7 @@ class DailyReport {
   }
 
   static async getCampaignSummary(campaignId, days = 30) {
+    const safeDays = Math.max(1, parseInt(days, 10) || 30);
     const query = `
       SELECT 
         SUM(impressions) as total_impressions,
@@ -129,13 +130,14 @@ class DailyReport {
         AVG(cpa) as avg_cpa
       FROM daily_reports
       WHERE campaign_id = $1
-      AND report_date >= CURRENT_DATE - INTERVAL '${days} days'
+      AND report_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')
     `;
-    const result = await pool.query(query, [campaignId]);
+    const result = await pool.query(query, [campaignId, safeDays]);
     return result.rows[0];
   }
 
   static async getWebsiteSummary(websiteId, days = 30) {
+    const safeDays = Math.max(1, parseInt(days, 10) || 30);
     const query = `
       SELECT 
         SUM(impressions) as total_impressions,
@@ -145,13 +147,15 @@ class DailyReport {
         COUNT(DISTINCT campaign_id) as unique_campaigns
       FROM daily_reports
       WHERE website_id = $1
-      AND report_date >= CURRENT_DATE - INTERVAL '${days} days'
+      AND report_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')
     `;
-    const result = await pool.query(query, [websiteId]);
+    const result = await pool.query(query, [websiteId, safeDays]);
     return result.rows[0];
   }
 
   static async getTopPerformingCampaigns(limit = 10, days = 7) {
+    const safeLimit = Math.max(1, parseInt(limit, 10) || 10);
+    const safeDays = Math.max(1, parseInt(days, 10) || 7);
     const query = `
       SELECT 
         campaign_id,
@@ -163,12 +167,12 @@ class DailyReport {
         AVG(ctr) as avg_ctr
       FROM daily_reports dr
       JOIN campaigns c ON dr.campaign_id = c.id
-      WHERE report_date >= CURRENT_DATE - INTERVAL '${days} days'
+      WHERE report_date >= CURRENT_DATE - ($2 * INTERVAL '1 day')
       GROUP BY campaign_id, c.name
       ORDER BY total_conversions DESC, total_clicks DESC
       LIMIT $1
     `;
-    const result = await pool.query(query, [limit]);
+    const result = await pool.query(query, [safeLimit, safeDays]);
     return result.rows;
   }
 }

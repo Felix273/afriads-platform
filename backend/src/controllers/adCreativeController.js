@@ -159,9 +159,10 @@ const updateCreative = async (req, res) => {
       status
     } = req.body;
 
-    // Verify ownership
+    // Verify ownership and get current state
     const ownershipCheck = await query(
-      `SELECT ac.id FROM ad_creatives ac
+      `SELECT ac.id, ac.status as current_status, ac.title, ac.description, ac.image_url, ac.video_url, ac.destination_url
+       FROM ad_creatives ac
        INNER JOIN campaigns c ON ac.campaign_id = c.id
        WHERE ac.id = $1 AND ac.campaign_id = $2 AND c.advertiser_id = $3`,
       [creative_id, campaign_id, req.user.id]
@@ -170,8 +171,62 @@ const updateCreative = async (req, res) => {
     if (ownershipCheck.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Ad creative not found'
+        message: "Ad creative not found"
       });
+    }
+
+    const currentCreative = ownershipCheck.rows[0];
+    const isAdminUser = req.user.user_type === "admin";
+    let nextStatus = currentCreative.current_status;
+
+    // Enforce role-based status transitions
+    if (status !== undefined && status !== null && status !== currentCreative.current_status) {
+      if (!isAdminUser) {
+        // Advertisers can only pause an active/approved ad, or resume a paused ad
+        if (["approved", "rejected"].includes(status)) {
+          return res.status(403).json({
+            success: false,
+            message: "Only administrators can approve or reject creatives"
+          });
+        }
+
+        if (status === "active") {
+          if (!["approved", "paused"].includes(currentCreative.current_status)) {
+            return res.status(400).json({
+              success: false,
+              message: "Creatives must be approved by an administrator before activation"
+            });
+          }
+          nextStatus = "active";
+        } else if (status === "paused") {
+          if (!["active", "approved"].includes(currentCreative.current_status)) {
+            return res.status(400).json({
+              success: false,
+              message: "Only approved or active creatives can be paused"
+            });
+          }
+          nextStatus = "paused";
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid status transition"
+          });
+        }
+      } else {
+        nextStatus = status;
+      }
+    }
+
+    // If core content changed by advertiser, re-submit for moderation unless admin
+    const contentChanged =
+      (title !== undefined && title !== currentCreative.title) ||
+      (description !== undefined && description !== currentCreative.description) ||
+      (image_url !== undefined && image_url !== currentCreative.image_url) ||
+      (video_url !== undefined && video_url !== currentCreative.video_url) ||
+      (destination_url !== undefined && destination_url !== currentCreative.destination_url);
+
+    if (contentChanged && !isAdminUser && ["approved", "active"].includes(currentCreative.current_status)) {
+      nextStatus = "pending";
     }
 
     const result = await query(
@@ -183,22 +238,25 @@ const updateCreative = async (req, res) => {
            video_url = COALESCE($5, video_url),
            destination_url = COALESCE($6, destination_url),
            call_to_action = COALESCE($7, call_to_action),
-           status = COALESCE($8, status)
+           status = $8,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $9
        RETURNING *`,
-      [name, title, description, image_url, video_url, destination_url, call_to_action, status, creative_id]
+      [name, title, description, image_url, video_url, destination_url, call_to_action, nextStatus, creative_id]
     );
 
     res.json({
       success: true,
-      message: 'Ad creative updated successfully',
+      message: contentChanged && nextStatus === "pending"
+        ? "Ad creative updated and re-submitted for admin approval"
+        : "Ad creative updated successfully",
       data: result.rows[0]
     });
   } catch (error) {
-    console.error('Update creative error:', error);
+    console.error("Update creative error:", error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update ad creative',
+      message: "Failed to update ad creative",
       error: error.message
     });
   }

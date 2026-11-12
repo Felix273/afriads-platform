@@ -9,6 +9,18 @@
   const currentScript = document.currentScript || Array.from(document.scripts).find(script => script.src && script.src.includes('afriads-widget.js'));
   const scriptOrigin = currentScript && currentScript.src ? new URL(currentScript.src).origin : window.location.origin;
   const AFRIADS_API = `${scriptOrigin}/api/ad-serve`;
+
+  function isSafeUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const trimmed = url.trim();
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+    try {
+      const parsed = new URL(trimmed, window.location.origin);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch (e) {
+      return false;
+    }
+  }
   
   // Find all ad zones on the page
   const adZones = document.querySelectorAll('[id^="afriads-zone-"]');
@@ -28,15 +40,15 @@
   
   async function fetchAd(zoneId, websiteId, container) {
     try {
-      const response = await fetch(`${AFRIADS_API}/serve?zone_id=${zoneId}&website_id=${websiteId}`);
+      const response = await fetch(`${AFRIADS_API}/serve?zone_id=${encodeURIComponent(zoneId)}&website_id=${encodeURIComponent(websiteId)}`);
       const data = await response.json();
       
-      if (!data.success) {
+      if (!data.success || !data.data) {
         console.log('AfriAds: No ads available');
         return;
       }
       
-      // Render the ad
+      // Render the ad safely
       renderAd(data.data, container);
       
     } catch (error) {
@@ -46,66 +58,170 @@
   
   function renderAd(adData, container) {
     const { ad, tracking, impression_id } = adData;
-    
-    // Create ad HTML based on format
-    let adHTML = '';
+    if (!ad) return;
+
+    container.textContent = '';
+    const clickUrl = tracking && isSafeUrl(tracking.click_url) ? tracking.click_url : null;
     
     if (ad.ad_type === 'display') {
-      adHTML = `
-        <div class="afriads-ad" style="text-align: center; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">
-          ${ad.image_url ? `<img src="${ad.image_url}" alt="${ad.title}" style="max-width: 100%; height: auto;">` : ''}
-          <h3 style="margin: 10px 0; font-size: 18px;">${ad.title}</h3>
-          <p style="margin: 10px 0; color: #666;">${ad.description}</p>
-          <a href="${tracking.click_url}" 
-             target="_blank" 
-             class="afriads-cta"
-             style="display: inline-block; padding: 10px 20px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px;">
-            ${ad.call_to_action || 'Learn More'}
-          </a>
-          <div style="font-size: 10px; color: #999; margin-top: 10px;">Advertisement</div>
-        </div>
-      `;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'afriads-ad';
+      wrapper.style.textAlign = 'center';
+      wrapper.style.border = '1px solid #ddd';
+      wrapper.style.padding = '10px';
+      wrapper.style.background = '#f9f9f9';
+
+      if (ad.image_url && isSafeUrl(ad.image_url)) {
+        const img = document.createElement('img');
+        img.src = ad.image_url;
+        img.alt = ad.title || 'Advertisement';
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        wrapper.appendChild(img);
+      }
+
+      const h3 = document.createElement('h3');
+      h3.style.margin = '10px 0';
+      h3.style.fontSize = '18px';
+      h3.textContent = ad.title || '';
+      wrapper.appendChild(h3);
+
+      if (ad.description) {
+        const p = document.createElement('p');
+        p.style.margin = '10px 0';
+        p.style.color = '#666';
+        p.textContent = ad.description;
+        wrapper.appendChild(p);
+      }
+
+      if (clickUrl) {
+        const a = document.createElement('a');
+        a.href = clickUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.className = 'afriads-cta';
+        a.style.display = 'inline-block';
+        a.style.padding = '10px 20px';
+        a.style.background = '#4CAF50';
+        a.style.color = 'white';
+        a.style.textDecoration = 'none';
+        a.style.borderRadius = '4px';
+        a.textContent = ad.call_to_action || 'Learn More';
+        wrapper.appendChild(a);
+      }
+
+      const footer = document.createElement('div');
+      footer.style.fontSize = '10px';
+      footer.style.color = '#999';
+      footer.style.marginTop = '10px';
+      footer.textContent = 'Advertisement';
+      wrapper.appendChild(footer);
+
+      container.appendChild(wrapper);
+
     } else if (ad.ad_type === 'video') {
-      adHTML = `
-        <div class="afriads-ad" style="text-align: center; border: 1px solid #ddd; padding: 10px; background: #000;">
-          <video controls style="max-width: 100%;">
-            <source src="${ad.video_url}" type="video/mp4">
-            Your browser does not support the video tag.
-          </video>
-          <a href="${tracking.click_url}" 
-             target="_blank" 
-             style="display: block; padding: 10px; background: #4CAF50; color: white; text-decoration: none; margin-top: 10px;">
-            ${ad.call_to_action || 'Learn More'}
-          </a>
-        </div>
-      `;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'afriads-ad';
+      wrapper.style.textAlign = 'center';
+      wrapper.style.border = '1px solid #ddd';
+      wrapper.style.padding = '10px';
+      wrapper.style.background = '#000';
+
+      if (ad.video_url && isSafeUrl(ad.video_url)) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.style.maxWidth = '100%';
+
+        const source = document.createElement('source');
+        source.src = ad.video_url;
+        source.type = 'video/mp4';
+        video.appendChild(source);
+
+        wrapper.appendChild(video);
+      }
+
+      if (clickUrl) {
+        const a = document.createElement('a');
+        a.href = clickUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.display = 'block';
+        a.style.padding = '10px';
+        a.style.background = '#4CAF50';
+        a.style.color = 'white';
+        a.style.textDecoration = 'none';
+        a.style.marginTop = '10px';
+        a.textContent = ad.call_to_action || 'Learn More';
+        wrapper.appendChild(a);
+      }
+
+      container.appendChild(wrapper);
+
     } else if (ad.ad_type === 'native') {
-      adHTML = `
-        <div class="afriads-ad afriads-native" style="border: 1px solid #ddd; padding: 15px; background: #fff;">
-          ${ad.image_url ? `<img src="${ad.image_url}" alt="${ad.title}" style="width: 100%; height: auto; margin-bottom: 10px;">` : ''}
-          <h3 style="margin: 0 0 10px 0; font-size: 20px;">${ad.title}</h3>
-          <p style="margin: 0 0 15px 0; color: #333;">${ad.description}</p>
-          <a href="${tracking.click_url}" 
-             target="_blank" 
-             style="display: inline-block; padding: 10px 20px; background: #2196F3; color: white; text-decoration: none; border-radius: 4px;">
-            ${ad.call_to_action || 'Read More'}
-          </a>
-          <div style="font-size: 10px; color: #999; margin-top: 10px;">Sponsored Content</div>
-        </div>
-      `;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'afriads-ad afriads-native';
+      wrapper.style.border = '1px solid #ddd';
+      wrapper.style.padding = '15px';
+      wrapper.style.background = '#fff';
+
+      if (ad.image_url && isSafeUrl(ad.image_url)) {
+        const img = document.createElement('img');
+        img.src = ad.image_url;
+        img.alt = ad.title || 'Advertisement';
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.marginBottom = '10px';
+        wrapper.appendChild(img);
+      }
+
+      const h3 = document.createElement('h3');
+      h3.style.margin = '0 0 10px 0';
+      h3.style.fontSize = '20px';
+      h3.textContent = ad.title || '';
+      wrapper.appendChild(h3);
+
+      if (ad.description) {
+        const p = document.createElement('p');
+        p.style.margin = '0 0 15px 0';
+        p.style.color = '#333';
+        p.textContent = ad.description;
+        wrapper.appendChild(p);
+      }
+
+      if (clickUrl) {
+        const a = document.createElement('a');
+        a.href = clickUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.style.display = 'inline-block';
+        a.style.padding = '10px 20px';
+        a.style.background = '#2196F3';
+        a.style.color = 'white';
+        a.style.textDecoration = 'none';
+        a.style.borderRadius = '4px';
+        a.textContent = ad.call_to_action || 'Read More';
+        wrapper.appendChild(a);
+      }
+
+      const footer = document.createElement('div');
+      footer.style.fontSize = '10px';
+      footer.style.color = '#999';
+      footer.style.marginTop = '10px';
+      footer.textContent = 'Sponsored Content';
+      wrapper.appendChild(footer);
+
+      container.appendChild(wrapper);
     }
     
-    container.innerHTML = adHTML;
-    
-    // Track impression viewability (when ad is 50% visible)
+    // Track impression viewability
     observeAdViewability(container, impression_id);
   }
   
   function observeAdViewability(element, impressionId) {
+    if (!('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-          // Ad is viewable
           console.log('AfriAds: Ad viewable', impressionId);
           observer.unobserve(element);
         }
@@ -115,7 +231,7 @@
     observer.observe(element);
   }
   
-  // Conversion tracking function (for advertisers to call)
+  // Conversion tracking function
   window.afriadsTrackConversion = function(impressionId, conversionType, conversionValue) {
     fetch(`${AFRIADS_API}/conversion`, {
       method: 'POST',

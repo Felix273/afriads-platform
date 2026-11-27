@@ -6,11 +6,13 @@ class AdPlacementController {
   // Create ad placement
   async createPlacement(req, res) {
     try {
-      const { website_id, name, placement_type, ad_format, status } = req.body;
+      const { website_id, name, placement_type, zone_type, ad_format, dimensions, status } = req.body;
+      const resolvedType = placement_type || zone_type;
+      const resolvedFormat = ad_format || dimensions;
       const userId = req.user.id;
 
       // Validation
-      if (!website_id || !name || !placement_type) {
+      if (!website_id || !name || !resolvedType) {
         return res.status(400).json({ 
           error: 'Website ID, name, and placement type are required' 
         });
@@ -34,8 +36,8 @@ class AdPlacementController {
       const placement = await AdPlacement.create({
         website_id,
         name,
-        placement_type,
-        ad_format,
+        placement_type: resolvedType,
+        ad_format: resolvedFormat,
         status: status || 'active'
       });
 

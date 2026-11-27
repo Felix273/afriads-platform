@@ -1,4 +1,5 @@
 // models/AdPlacement.js
+// Canonical model mapping to ad_zones table
 const { pool } = require('../config/database');
 
 class AdPlacement {
@@ -7,31 +8,43 @@ class AdPlacement {
       website_id,
       name,
       placement_type,
+      zone_type,
       ad_format,
+      dimensions,
       status = 'active'
     } = placementData;
 
+    const resolvedType = zone_type || placement_type || 'display';
+    const resolvedDimensions = dimensions || ad_format || null;
+
     const query = `
-      INSERT INTO ad_placements (
-        website_id, name, placement_type, ad_format, status
+      INSERT INTO ad_zones (
+        website_id, name, zone_type, dimensions, status
       )
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
+      RETURNING *,
+                zone_type as placement_type,
+                dimensions as ad_format
     `;
 
-    const values = [website_id, name, placement_type, ad_format, status];
+    const values = [website_id, name, resolvedType, resolvedDimensions, status];
     const result = await pool.query(query, values);
     return result.rows[0];
   }
 
   static async findById(id) {
-    const result = await pool.query('SELECT * FROM ad_placements WHERE id = $1', [id]);
+    const result = await pool.query(
+      `SELECT *, zone_type as placement_type, dimensions as ad_format 
+       FROM ad_zones WHERE id = $1`,
+      [id]
+    );
     return result.rows[0];
   }
 
   static async findByWebsiteId(websiteId) {
     const result = await pool.query(
-      'SELECT * FROM ad_placements WHERE website_id = $1 ORDER BY created_at DESC',
+      `SELECT *, zone_type as placement_type, dimensions as ad_format 
+       FROM ad_zones WHERE website_id = $1 ORDER BY created_at DESC`,
       [websiteId]
     );
     return result.rows;
@@ -39,34 +52,50 @@ class AdPlacement {
 
   static async findActiveByWebsiteId(websiteId) {
     const result = await pool.query(
-      'SELECT * FROM ad_placements WHERE website_id = $1 AND status = $2',
+      `SELECT *, zone_type as placement_type, dimensions as ad_format 
+       FROM ad_zones WHERE website_id = $1 AND status = $2`,
       [websiteId, 'active']
     );
     return result.rows;
   }
 
   static async update(id, updateData) {
-    const allowedFields = new Set(['name', 'placement_type', 'ad_format', 'status']);
     const fields = [];
     const values = [];
     let paramCount = 1;
 
-    Object.keys(updateData).forEach(key => {
-      if (allowedFields.has(key) && updateData[key] !== undefined) {
-        fields.push(`${key} = $${paramCount}`);
-        values.push(updateData[key]);
-        paramCount++;
-      }
-    });
+    if (updateData.name !== undefined) {
+      fields.push(`name = $${paramCount++}`);
+      values.push(updateData.name);
+    }
+
+    const type = updateData.zone_type || updateData.placement_type;
+    if (type !== undefined) {
+      fields.push(`zone_type = $${paramCount++}`);
+      values.push(type);
+    }
+
+    const dims = updateData.dimensions || updateData.ad_format;
+    if (dims !== undefined) {
+      fields.push(`dimensions = $${paramCount++}`);
+      values.push(dims);
+    }
+
+    if (updateData.status !== undefined) {
+      fields.push(`status = $${paramCount++}`);
+      values.push(updateData.status);
+    }
 
     if (fields.length === 0) return null;
 
     values.push(id);
     const query = `
-      UPDATE ad_placements 
-      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      UPDATE ad_zones 
+      SET ${fields.join(', ')}
       WHERE id = $${paramCount}
-      RETURNING *
+      RETURNING *,
+                zone_type as placement_type,
+                dimensions as ad_format
     `;
 
     const result = await pool.query(query, values);
@@ -75,7 +104,7 @@ class AdPlacement {
 
   static async delete(id) {
     const result = await pool.query(
-      'DELETE FROM ad_placements WHERE id = $1 RETURNING *',
+      'DELETE FROM ad_zones WHERE id = $1 RETURNING *',
       [id]
     );
     return result.rows[0];
@@ -83,10 +112,11 @@ class AdPlacement {
 
   static async getWithWebsite(id) {
     const result = await pool.query(
-      `SELECT ap.*, w.name as website_name, w.url as website_url
-       FROM ad_placements ap
-       JOIN websites w ON ap.website_id = w.id
-       WHERE ap.id = $1`,
+      `SELECT az.*, az.zone_type as placement_type, az.dimensions as ad_format,
+              w.name as website_name, w.url as website_url
+       FROM ad_zones az
+       JOIN websites w ON az.website_id = w.id
+       WHERE az.id = $1`,
       [id]
     );
     return result.rows[0];

@@ -20,7 +20,7 @@ class PayoutController {
       const minimumPayout = await Payout.getMinimumPayoutAmount();
       if (amount < minimumPayout) {
         return res.status(400).json({ 
-          error: `Minimum payout amount is $${minimumPayout}` 
+          error: `Minimum payout amount is KES ${minimumPayout}` 
         });
       }
 
@@ -47,7 +47,8 @@ class PayoutController {
       const payout = await Payout.create({
         publisher_id: userId,
         amount,
-        payout_method: payout_method || 'paypal',
+        currency: 'KES',
+        payout_method: payout_method || 'mpesa',
         account_details,
         description
       });
@@ -60,7 +61,7 @@ class PayoutController {
         user_id: userId,
         type: 'payout_requested',
         title: 'Payout Request Submitted',
-        message: `Your payout request of $${amount} has been submitted and is pending approval.`,
+        message: `Your payout request of KES ${amount} has been submitted and is pending approval.`,
         data: { payout_id: payout.id, amount }
       });
 
@@ -185,7 +186,7 @@ class PayoutController {
         action: 'cancel_payout',
         entity_type: 'payout',
         entity_id: id,
-        description: `Cancelled payout request: $${payout.amount}`,
+        description: `Cancelled payout request: KES ${payout.amount}`,
         ip_address: req.ip
       });
 
@@ -265,7 +266,7 @@ class PayoutController {
         action: 'approve_payout',
         entity_type: 'payout',
         entity_id: id,
-        description: `Approved payout: $${payout.amount} for publisher ${payout.publisher_id}`,
+        description: `Approved payout: KES ${payout.amount} for publisher ${payout.publisher_id}`,
         ip_address: req.ip,
         metadata: { transaction_id }
       });
@@ -312,7 +313,7 @@ class PayoutController {
         user_id: payout.publisher_id,
         type: 'payout_rejected',
         title: 'Payout Request Rejected',
-        message: `Your payout request of $${payout.amount} has been rejected. ${reason || ''}`,
+        message: `Your payout request of KES ${payout.amount} has been rejected. ${reason || ''}`,
         data: { payout_id: id, amount: payout.amount, reason }
       });
 
@@ -322,7 +323,7 @@ class PayoutController {
         action: 'reject_payout',
         entity_type: 'payout',
         entity_id: id,
-        description: `Rejected payout: $${payout.amount} for publisher ${payout.publisher_id}`,
+        description: `Rejected payout: KES ${payout.amount} for publisher ${payout.publisher_id}`,
         ip_address: req.ip,
         metadata: { reason }
       });

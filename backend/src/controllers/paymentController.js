@@ -61,7 +61,7 @@ const completePayment = async ({ payment, status, paidAt = null, metadata = {}, 
         action: 'payment_completed',
         entity_type: 'payment',
         entity_id: lockedPayment.id,
-        description: `Payment completed: $${lockedPayment.amount}`,
+        description: `Payment completed: KES ${lockedPayment.amount}`,
         ip_address: ipAddress,
         metadata
       });
@@ -124,7 +124,7 @@ class PaymentController {
       const payment = await Payment.create({
         user_id: userId,
         amount,
-        currency: normalizedMethod === 'mpesa' ? 'KES' : (currency || 'USD'),
+        currency: currency || 'KES',
         payment_method: normalizedMethod,
         transaction_id: transactionId,
         payment_gateway: normalizedMethod,

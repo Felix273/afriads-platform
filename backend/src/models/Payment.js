@@ -6,7 +6,7 @@ class Payment {
     const {
       user_id,
       amount,
-      currency = 'USD',
+      currency = 'KES',
       payment_method,
       transaction_id,
       payment_gateway,

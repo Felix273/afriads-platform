@@ -131,7 +131,7 @@ class ActivityLog {
       action: 'payment',
       entity_type: 'payment',
       entity_id: paymentId,
-      description: `Payment made: $${amount}`,
+      description: `Payment made: KES ${amount}`,
       ip_address: ipAddress,
       metadata: { amount }
     });
@@ -143,7 +143,7 @@ class ActivityLog {
       action: 'request_payout',
       entity_type: 'payout',
       entity_id: payoutId,
-      description: `Payout requested: $${amount}`,
+      description: `Payout requested: KES ${amount}`,
       ip_address: ipAddress,
       metadata: { amount }
     });

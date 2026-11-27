@@ -6,7 +6,7 @@ class Payout {
     const {
       publisher_id,
       amount,
-      currency = 'USD',
+      currency = 'KES',
       payout_method,
       account_details,
       description
@@ -107,7 +107,7 @@ class Payout {
   }
 
   static async getMinimumPayoutAmount() {
-    return 50.00; // Minimum $50 for payout
+    return parseFloat(process.env.MINIMUM_PAYOUT_AMOUNT || '500.00'); // Minimum KES 500 for payout
   }
 }
 

@@ -107,7 +107,7 @@ class Notification {
       user_id: userId,
       type: 'payout_processed',
       title: 'Payout Processed',
-      message: `Your payout of $${amount} has been processed successfully.`,
+      message: `Your payout of KES ${amount} has been processed successfully.`,
       data: { amount }
     });
   }
@@ -117,7 +117,7 @@ class Notification {
       user_id: userId,
       type: 'payment_received',
       title: 'Payment Received',
-      message: `Your payment of $${amount} has been received and added to your balance.`,
+      message: `Your payment of KES ${amount} has been received and added to your balance.`,
       data: { amount }
     });
   }

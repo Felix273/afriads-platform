@@ -66,12 +66,12 @@ const getWebsites = async (req, res) => {
          GROUP BY website_id
        ) z ON z.website_id = w.id
        LEFT JOIN (
-         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost), 0) as impression_earnings
+         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost * 0.30), 0) as impression_earnings
          FROM impressions
          GROUP BY website_id
        ) i ON i.website_id = w.id
        LEFT JOIN (
-         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost), 0) as click_earnings
+         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost * 0.30), 0) as click_earnings
          FROM clicks
          GROUP BY website_id
        ) c ON c.website_id = w.id
@@ -120,12 +120,12 @@ const getWebsite = async (req, res) => {
          GROUP BY website_id
        ) z ON z.website_id = w.id
        LEFT JOIN (
-         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost), 0) as impression_earnings
+         SELECT website_id, COUNT(*) as impressions, COALESCE(SUM(cost * 0.30), 0) as impression_earnings
          FROM impressions
          GROUP BY website_id
        ) i ON i.website_id = w.id
        LEFT JOIN (
-         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost), 0) as click_earnings
+         SELECT website_id, COUNT(*) as clicks, COALESCE(SUM(cost * 0.30), 0) as click_earnings
          FROM clicks
          GROUP BY website_id
        ) c ON c.website_id = w.id
@@ -337,7 +337,7 @@ const getEarnings = async (req, res) => {
           DATE(i.timestamp) as report_date,
           i.website_id,
           COUNT(*)::INTEGER as impressions,
-          COALESCE(SUM(i.cost), 0) as impression_earnings
+          COALESCE(SUM(i.cost * 0.30), 0) as impression_earnings
         FROM impressions i
         INNER JOIN websites w ON w.id = i.website_id
         WHERE w.publisher_id = $1
@@ -348,7 +348,7 @@ const getEarnings = async (req, res) => {
           DATE(c.timestamp) as report_date,
           c.website_id,
           COUNT(*)::INTEGER as clicks,
-          COALESCE(SUM(c.cost), 0) as click_earnings
+          COALESCE(SUM(c.cost * 0.30), 0) as click_earnings
         FROM clicks c
         INNER JOIN websites w ON w.id = c.website_id
         WHERE w.publisher_id = $1

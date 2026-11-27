@@ -1,6 +1,83 @@
 // src/controllers/adServeController.js
 const { query } = require('../config/database');
 
+
+// Financial settlement helpers
+const deductAdvertiserBalance = async (campaignId, advertiserId, cost, referenceId, description) => {
+  if (!cost || cost <= 0) return;
+
+  await query(
+    `UPDATE campaigns 
+     SET spent_amount = spent_amount + $1,
+         status = CASE 
+           WHEN total_budget IS NOT NULL AND (spent_amount + $1) >= total_budget THEN 'completed'
+           ELSE status
+         END,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2`,
+    [cost, campaignId]
+  );
+
+  const userResult = await query(
+    `UPDATE users 
+     SET balance = GREATEST(0.00, balance - $1),
+         updated_at = CURRENT_TIMESTAMP 
+     WHERE id = $2
+     RETURNING balance`,
+    [cost, advertiserId]
+  );
+
+  const balanceAfter = userResult.rows[0]?.balance || 0;
+
+  await query(
+    `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+     VALUES ($1, 'ad_spend', $2, $3, $4, $5, 'completed')`,
+    [advertiserId, cost, balanceAfter, description, String(referenceId)]
+  );
+
+  if (parseFloat(balanceAfter) <= 0) {
+    await query(
+      `UPDATE campaigns
+       SET status = 'paused',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE advertiser_id = $1 AND status = 'active'`,
+      [advertiserId]
+    );
+  }
+};
+
+const creditPublisherEarnings = async (websiteId, cost, referenceId, description) => {
+  if (!cost || cost <= 0) return;
+
+  const publisherCut = parseFloat((cost * 0.30).toFixed(4));
+  if (publisherCut <= 0) return;
+
+  const siteResult = await query(
+    'SELECT publisher_id FROM websites WHERE id = $1',
+    [websiteId]
+  );
+
+  if (siteResult.rows.length === 0) return;
+  const publisherId = siteResult.rows[0].publisher_id;
+
+  const userResult = await query(
+    `UPDATE users
+     SET balance = balance + $1,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2
+     RETURNING balance`,
+    [publisherCut, publisherId]
+  );
+
+  const balanceAfter = userResult.rows[0]?.balance || 0;
+
+  await query(
+    `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+     VALUES ($1, 'earnings', $2, $3, $4, $5, 'completed')`,
+    [publisherId, publisherCut, balanceAfter, description, String(referenceId)]
+  );
+};
+
 // Helper function to parse user agent
 const getSafeRedirectUrl = (rawUrl) => {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -94,6 +171,7 @@ const serveAd = async (req, res) => {
       SELECT 
         ac.id as creative_id,
         ac.campaign_id,
+        c.advertiser_id,
         ac.name,
         ac.ad_type,
         ac.format,
@@ -119,6 +197,8 @@ const serveAd = async (req, res) => {
       WHERE ac.status = 'active'
         AND c.status = 'active'
         AND u.status = 'active'
+        AND u.balance > 0
+        AND u.balance >= (CASE WHEN c.bid_type = 'cpm' THEN (c.bid_amount / 1000) ELSE c.bid_amount END)
         AND ac.ad_type = $5
         AND ($6::VARCHAR IS NULL OR ac.format IS NULL OR ac.format = $6)
         AND (c.start_date IS NULL OR c.start_date <= NOW())
@@ -203,11 +283,11 @@ const serveAd = async (req, res) => {
 
     const impressionId = impressionResult.rows[0].id;
 
-    // Update campaign spend
-    await query(
-      'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-      [cost, ad.campaign_id]
-    );
+    // Process financial settlement for CPM
+    if (cost > 0) {
+      await deductAdvertiserBalance(ad.campaign_id, ad.advertiser_id, cost, impressionId, 'CPM ad impression served');
+      await creditPublisherEarnings(website_id, cost, impressionId, 'CPM ad impression revenue share');
+    }
 
     // Return ad data
     res.json({
@@ -289,7 +369,7 @@ const trackClick = async (req, res) => {
 
     // Get campaign bid info
     const campaignResult = await query(
-      'SELECT bid_type, bid_amount FROM campaigns WHERE id = $1',
+      'SELECT advertiser_id, bid_type, bid_amount FROM campaigns WHERE id = $1',
       [impression.campaign_id]
     );
 
@@ -321,12 +401,10 @@ const trackClick = async (req, res) => {
       ]
     );
 
-    // Update campaign spend if CPC
+    // Process financial settlement for CPC
     if (cost > 0) {
-      await query(
-        'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-        [cost, impression.campaign_id]
-      );
+      await deductAdvertiserBalance(impression.campaign_id, campaign.advertiser_id, cost, impression_id, 'CPC ad click');
+      await creditPublisherEarnings(impression.website_id, cost, impression_id, 'CPC ad click revenue share');
     }
 
     // Redirect safely to destination
@@ -448,7 +526,7 @@ const trackConversion = async (req, res) => {
 
     // Get campaign bid info
     const campaignResult = await query(
-      'SELECT bid_type, bid_amount FROM campaigns WHERE id = $1',
+      'SELECT advertiser_id, bid_type, bid_amount FROM campaigns WHERE id = $1',
       [impression.campaign_id]
     );
 
@@ -474,12 +552,10 @@ const trackConversion = async (req, res) => {
       ]
     );
 
-    // Update campaign spend if CPA
+    // Process financial settlement for CPA
     if (cost > 0) {
-      await query(
-        'UPDATE campaigns SET spent_amount = spent_amount + $1 WHERE id = $2',
-        [cost, impression.campaign_id]
-      );
+      await deductAdvertiserBalance(impression.campaign_id, campaign.advertiser_id, cost, click.id, 'CPA ad conversion');
+      await creditPublisherEarnings(impression.website_id, cost, click.id, 'CPA conversion revenue share');
     }
 
     res.json({

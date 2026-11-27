@@ -45,9 +45,22 @@ const completePayment = async ({ payment, status, paidAt = null, metadata = {}, 
     const updatedPayment = updatedResult.rows[0];
 
     if (status === 'completed' && !wasCompleted) {
-      await client.query(
-        'UPDATE users SET balance = balance + $1 WHERE id = $2',
+      const userRes = await client.query(
+        'UPDATE users SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING balance',
         [lockedPayment.amount, lockedPayment.user_id]
+      );
+      const balanceAfter = userRes.rows[0]?.balance || 0;
+
+      await client.query(
+        `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+         VALUES ($1, 'deposit', $2, $3, $4, $5, 'completed')`,
+        [
+          lockedPayment.user_id,
+          lockedPayment.amount,
+          balanceAfter,
+          `Wallet top-up via ${lockedPayment.payment_method || 'mpesa'}`,
+          lockedPayment.transaction_id || String(lockedPayment.id)
+        ]
       );
     }
 
@@ -292,19 +305,31 @@ class PaymentController {
     }
   }
 
-  // Handle payment webhook (from Stripe, PayPal, etc.)
+  // Handle payment webhook (strictly verified against configured gateway secret)
   async handleWebhook(req, res) {
     try {
+      const configuredSecret = process.env.PAYMENT_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET;
+      const incomingSecret = req.headers['x-webhook-secret'] || req.headers['stripe-signature'];
+
+      if (!configuredSecret || !incomingSecret || incomingSecret !== configuredSecret) {
+        return res.status(403).json({
+          success: false,
+          error: 'Unauthorized: Missing or invalid webhook signature'
+        });
+      }
+
       const { transaction_id, status, amount, metadata } = req.body;
 
-      // Find payment by transaction ID
+      if (!transaction_id || !status) {
+        return res.status(400).json({ error: 'transaction_id and status are required' });
+      }
+
       const payment = await Payment.findByTransactionId(transaction_id);
 
       if (!payment) {
         return res.status(404).json({ error: 'Payment not found' });
       }
 
-      // Update payment status
       const updatedPayment = await completePayment({
         payment,
         status,

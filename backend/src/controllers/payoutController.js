@@ -248,10 +248,23 @@ class PayoutController {
       // Update to processing
       await Payout.updateStatus(id, 'processing');
 
-      // Deduct from publisher balance
-      await pool.query(
-        'UPDATE users SET balance = balance - $1 WHERE id = $2',
+      // Deduct from publisher balance and record transaction
+      const userRes = await pool.query(
+        'UPDATE users SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING balance',
         [payout.amount, payout.publisher_id]
+      );
+      const balanceAfter = userRes.rows[0]?.balance || 0;
+
+      await pool.query(
+        `INSERT INTO transactions (user_id, transaction_type, amount, balance_after, description, reference_id, status)
+         VALUES ($1, 'withdrawal', $2, $3, $4, $5, 'completed')`,
+        [
+          payout.publisher_id,
+          payout.amount,
+          balanceAfter,
+          `Payout processed via ${payout.payout_method || 'mpesa'}`,
+          transaction_id || String(payout.id)
+        ]
       );
 
       // Mark as completed

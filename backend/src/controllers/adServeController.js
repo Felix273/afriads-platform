@@ -2,6 +2,19 @@
 const { query } = require('../config/database');
 
 // Helper function to parse user agent
+const getSafeRedirectUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.href;
+    }
+  } catch (err) {
+    return null;
+  }
+  return null;
+};
+
 const parseUserAgent = (userAgent) => {
   const ua = userAgent.toLowerCase();
   
@@ -254,6 +267,14 @@ const trackClick = async (req, res) => {
     );
 
     const destinationUrl = adResult.rows[0].destination_url;
+    const safeDestinationUrl = getSafeRedirectUrl(destinationUrl);
+
+    if (!safeDestinationUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ad destination URL'
+      });
+    }
 
     const duplicateClick = await query(
       `SELECT id FROM clicks
@@ -263,7 +284,7 @@ const trackClick = async (req, res) => {
     );
 
     if (duplicateClick.rows.length > 0) {
-      return res.redirect(destinationUrl);
+      return res.redirect(safeDestinationUrl);
     }
 
     // Get campaign bid info
@@ -308,8 +329,8 @@ const trackClick = async (req, res) => {
       );
     }
 
-    // Redirect to destination
-    res.redirect(destinationUrl);
+    // Redirect safely to destination
+    return res.redirect(safeDestinationUrl);
   } catch (error) {
     console.error('Track click error:', error);
     res.status(500).json({
@@ -324,6 +345,8 @@ const trackClick = async (req, res) => {
 const getAdStats = async (req, res) => {
   try {
     const { campaign_id, start_date, end_date } = req.query;
+    const userId = req.user?.id;
+    const isAdmin = req.user?.user_type === 'admin';
 
     let queryText = `
       SELECT 
@@ -337,23 +360,29 @@ const getAdStats = async (req, res) => {
         END as ctr
       FROM impressions i
       LEFT JOIN clicks c ON i.id = c.impression_id
+      INNER JOIN campaigns cmp ON i.campaign_id = cmp.id
       WHERE 1=1
     `;
 
     const params = [];
 
+    if (!isAdmin) {
+      queryText += " AND cmp.advertiser_id = $" + (params.length + 1);
+      params.push(userId);
+    }
+
     if (campaign_id) {
-      queryText += ` AND i.campaign_id = $${params.length + 1}`;
+      queryText += " AND i.campaign_id = $" + (params.length + 1);
       params.push(campaign_id);
     }
 
     if (start_date) {
-      queryText += ` AND DATE(i.timestamp) >= $${params.length + 1}`;
+      queryText += " AND DATE(i.timestamp) >= $" + (params.length + 1);
       params.push(start_date);
     }
 
     if (end_date) {
-      queryText += ` AND DATE(i.timestamp) <= $${params.length + 1}`;
+      queryText += " AND DATE(i.timestamp) <= $" + (params.length + 1);
       params.push(end_date);
     }
 

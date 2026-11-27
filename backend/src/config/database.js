@@ -33,8 +33,7 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-  console.error('❌ Unexpected database error:', err);
-  process.exit(-1);
+  console.warn('⚠️  Unexpected idle client error in PostgreSQL pool (auto-recovering):', err.message);
 });
 
 // Query helper function

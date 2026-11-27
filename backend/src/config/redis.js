@@ -2,57 +2,79 @@
 const redis = require('redis');
 require('dotenv').config();
 
+const redisHost = process.env.REDIS_HOST || 'localhost';
+const redisPort = process.env.REDIS_PORT || 6379;
+const redisPassword = process.env.REDIS_PASSWORD || undefined;
+const redisUrl = process.env.REDIS_URL || `redis://${redisHost}:${redisPort}`;
+
 const redisClient = redis.createClient({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  retry_strategy: (options) => {
-    if (options.error && options.error.code === 'ECONNREFUSED') {
-      return new Error('Redis server refused the connection');
+  url: redisUrl,
+  password: redisPassword,
+  socket: {
+    reconnectStrategy: (retries) => {
+      if (retries > 10) {
+        return new Error('Redis max retries reached');
+      }
+      return Math.min(retries * 100, 3000);
     }
-    if (options.total_retry_time > 1000 * 60 * 60) {
-      return new Error('Redis retry time exhausted');
-    }
-    if (options.attempt > 10) {
-      return undefined;
-    }
-    return Math.min(options.attempt * 100, 3000);
   }
 });
 
+let isConnected = false;
+
 redisClient.on('connect', () => {
+  isConnected = true;
   console.log('✅ Redis connected successfully');
 });
 
-redisClient.on('error', (err) => {
-  console.error('❌ Redis error:', err);
+redisClient.on('ready', () => {
+  isConnected = true;
 });
 
-// Helper functions
-const cacheGet = (key) => {
-  return new Promise((resolve, reject) => {
-    redisClient.get(key, (err, data) => {
-      if (err) reject(err);
-      resolve(data ? JSON.parse(data) : null);
-    });
+redisClient.on('error', (err) => {
+  isConnected = false;
+  console.warn('⚠️  Redis connection warning:', err.message);
+});
+
+// Non-blocking auto-connect
+if (process.env.NODE_ENV !== 'test') {
+  redisClient.connect().catch((err) => {
+    console.warn('⚠️  Could not connect to Redis server (caching will fallback gracefully):', err.message);
   });
+}
+
+// Resilient Promise-based cache helpers
+const cacheGet = async (key) => {
+  if (!isConnected) return null;
+  try {
+    const data = await redisClient.get(key);
+    return data ? JSON.parse(data) : null;
+  } catch (err) {
+    console.warn('Redis cacheGet warning:', err.message);
+    return null;
+  }
 };
 
-const cacheSet = (key, value, expireSeconds = 3600) => {
-  return new Promise((resolve, reject) => {
-    redisClient.setex(key, expireSeconds, JSON.stringify(value), (err) => {
-      if (err) reject(err);
-      resolve(true);
-    });
-  });
+const cacheSet = async (key, value, expireSeconds = 3600) => {
+  if (!isConnected) return false;
+  try {
+    await redisClient.set(key, JSON.stringify(value), { EX: expireSeconds });
+    return true;
+  } catch (err) {
+    console.warn('Redis cacheSet warning:', err.message);
+    return false;
+  }
 };
 
-const cacheDel = (key) => {
-  return new Promise((resolve, reject) => {
-    redisClient.del(key, (err) => {
-      if (err) reject(err);
-      resolve(true);
-    });
-  });
+const cacheDel = async (key) => {
+  if (!isConnected) return false;
+  try {
+    await redisClient.del(key);
+    return true;
+  } catch (err) {
+    console.warn('Redis cacheDel warning:', err.message);
+    return false;
+  }
 };
 
 module.exports = {
